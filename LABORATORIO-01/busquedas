@@ -243,11 +243,11 @@ void amplitud() {
 	queue<pair<int, int>> cola;
 	map<pair<int, int>, pair<int, int>> predecesor;
 	set<pair<int, int>> visitados;
-	explorados.clear(); // Limpiar nodos explorados antes de iniciar la búsqueda
+	explorados.clear();
 	
 	cola.push(Inicio);
 	visitados.insert(Inicio);
-	explorados.push_back(Inicio); // Agregar el inicio a explorados
+	explorados.push_back(Inicio);
 	bool encontrado = false;
 	
 	while (!cola.empty() && !encontrado) {
@@ -266,7 +266,7 @@ void amplitud() {
 				cola.push(vecino);
 				visitados.insert(vecino);
 				predecesor[vecino] = actual;
-				explorados.push_back(vecino); // Agregar nodo visitado
+				explorados.push_back(vecino);
 				
 				if (vecino == Fin) {
 					encontrado = true;
@@ -288,7 +288,7 @@ void amplitud() {
 		cout << "No se encontró un camino." << endl;
 	}
 	
-	glutPostRedisplay(); // Forzar que se vuelva a llamar a display_cb()
+	glutPostRedisplay(); 
 }
 
 
