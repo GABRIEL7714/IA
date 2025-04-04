@@ -23,6 +23,22 @@ void amplitud();
 void hillClimbing();
 void A_star();
 
+vector<pair<int, int>> explorados;
+
+void amplitudAux() {
+	
+	// Dibujar nodos explorados en azul
+	glColor3f(0, 0, 1);
+	glPointSize(5.0);
+	glBegin(GL_POINTS);
+	for (auto& p : explorados) {
+		glVertex2i(p.first, p.second);
+	}
+	glEnd();
+}
+
+
+
 void generarPuntosRojos();
 bool existePunto(int x, int y);
 pair<int, int> seleccionarPunto();
@@ -101,6 +117,9 @@ void display_cb()
 	}
 	glEnd();
 	
+
+	amplitudAux();
+	
 	glutSwapBuffers();
 }
 
@@ -115,11 +134,11 @@ void initialize() {
 	generarPuntosRojos();
 	Inicio = seleccionarPunto();
 	Fin = seleccionarPunto();
-	profundidad();
+	amplitud();
 	
 	/*for (auto& p1 : puntosRojos)
 	{
-		cout << "(" << p1.first << ";" << p1.second << ")" << " ";
+	cout << "(" << p1.first << ";" << p1.second << ")" << " ";
 	}*/
 	
 	cout << endl << "INICIO: " << "(" << Inicio.first << ";" << Inicio.second << ")" << endl;
@@ -171,54 +190,16 @@ void generarPuntosRojos()
 	}
 }
 
-void hillClimbing()
-{
-	pair<int, int> actual = Inicio;
-	cout << "\nCamino:\n";
-	cout << "(" << actual.first << ";" << actual.second << ") ";
-	
-	while (actual != Fin)
-	{
-		pair<int, int> mejorVecino = actual;
-		double mejorDistancia = hypot(Fin.first - actual.first, Fin.second - actual.second);
-		bool encontrado = false;
-		
-		for (const auto& p : puntosRojos)
-		{
-			if (abs(p.first - actual.first) <= 25 && abs(p.second - actual.second) <= 25)
-			{
-				double distancia = hypot(Fin.first - p.first, Fin.second - p.second);
-				if (distancia < mejorDistancia)
-				{
-					mejorDistancia = distancia;
-					mejorVecino = p;
-					encontrado = true;
-				}
-			}
-		}
-		
-		if (!encontrado) {
-			cout << "\nNo hay un camino mejor\n";
-			return;
-		}
-		
-		actual = mejorVecino;
-		Camino.push_back(actual);
-	}
-	
-	cout << "\nFIN.\n";
-}
-
-
-
 
 void amplitud() {
 	queue<pair<int, int>> cola;
 	map<pair<int, int>, pair<int, int>> predecesor;
 	set<pair<int, int>> visitados;
+	explorados.clear(); // Limpiar nodos explorados antes de iniciar la búsqueda
 	
 	cola.push(Inicio);
 	visitados.insert(Inicio);
+	explorados.push_back(Inicio); // Agregar el inicio a explorados
 	bool encontrado = false;
 	
 	while (!cola.empty() && !encontrado) {
@@ -237,6 +218,7 @@ void amplitud() {
 				cola.push(vecino);
 				visitados.insert(vecino);
 				predecesor[vecino] = actual;
+				explorados.push_back(vecino); // Agregar nodo visitado
 				
 				if (vecino == Fin) {
 					encontrado = true;
@@ -254,131 +236,10 @@ void amplitud() {
 			paso = predecesor[paso];
 		}
 		reverse(Camino.begin(), Camino.end());
-	}
-	else {
+	} else {
 		cout << "No se encontró un camino." << endl;
 	}
+	
+	glutPostRedisplay(); // Forzar que se vuelva a llamar a display_cb()
 }
-void A_star() 
-{
-	pair<int, int> actual = Inicio;
-	cout << "\nCamino:\n";
-	cout << "(" << actual.first << ";" << actual.second << ") ";
-	
-	vector<vector<pair<int, int>>> padres(500 / 25 + 1, vector<pair<int, int>>(500 / 25 + 1, { -1, -1 }));
-	vector<vector<double>> gCosto(500 / 25 + 1, vector<double>(500 / 25 + 1, INFINITY));
-	vector<vector<double>> fTotal(500 / 25 + 1, vector<double>(500 / 25 + 1, INFINITY));
-	
-	gCosto[actual.first / 25][actual.second / 25] = 0;
-	fTotal[actual.first / 25][actual.second / 25] = hypot(Fin.first - actual.first, Fin.second - actual.second);
-	
-	vector<pair<int, int>> openSet;
-	openSet.push_back(actual);
-	
-	while (actual != Fin && !openSet.empty()) 
-	{
-		int mejorNodo = 0;
-		double minF = fTotal[openSet[0].first / 25][openSet[0].second / 25];
-		for (int i = 1; i < openSet.size(); i++) {
-			if (fTotal[openSet[i].first / 25][openSet[i].second / 25] < minF) {
-				minF = fTotal[openSet[i].first / 25][openSet[i].second / 25];
-				mejorNodo = i;
-			}
-		}
-		
-		actual = openSet[mejorNodo];
-		openSet.erase(openSet.begin() + mejorNodo);
-		
-		int dx[] = { -25, 0, 25, -25, 25, -25, 0, 25 };
-		int dy[] = { -25, -25, -25, 0, 0, 25, 25, 25 };
-		
-		for (int i = 0; i < 8; i++) {
-			pair<int, int> vecino = { actual.first + dx[i], actual.second + dy[i] };
-			
-			if (!existePunto(vecino.first, vecino.second)) continue;
-			
-			double posible_gCosto = gCosto[actual.first / 25][actual.second / 25] + hypot(dx[i], dy[i]);
-			
-			if (posible_gCosto < gCosto[vecino.first / 25][vecino.second / 25]) {
-				padres[vecino.first / 25][vecino.second / 25] = actual;
-				gCosto[vecino.first / 25][vecino.second / 25] = posible_gCosto;
-				fTotal[vecino.first / 25][vecino.second / 25] = posible_gCosto +
-					hypot(Fin.first - vecino.first, Fin.second - vecino.second);
-				
-				if (find(openSet.begin(), openSet.end(), vecino) == openSet.end()) {
-					openSet.push_back(vecino);
-				}
-			}
-		}
-	}
-	
-	if (actual == Fin) {
-		vector<pair<int, int>> camino_invertido;
-		pair<int, int> paso_actual = Fin;
-		while (paso_actual != Inicio) {
-			camino_invertido.push_back(paso_actual);
-			paso_actual = padres[paso_actual.first / 25][paso_actual.second / 25];
-		}
-		
-		for (int i = camino_invertido.size() - 1; i >= 0; i--) {
-			Camino.push_back(camino_invertido[i]);
-			cout << "(" << camino_invertido[i].first << ";" << camino_invertido[i].second << ") ";
-		}
-		cout << "\nFIN DE CAMINO.\n";
-	}
-	else {
-		cout << "\nNo se encontró un camino\n";
-	}
-}
-
-
-
-void profundidad() {
-    stack<pair<int, int>> pila;
-	map<pair<int, int>, pair<int, int>> predecesor;
-	set<pair<int, int>> visitados;
-	
-	pila.push(Inicio);
-	visitados.insert(Inicio);
-	bool encontrado = false;
-	
-	while (!pila.empty() && !encontrado) {
-		pair<int, int> actual = pila.top();
-		pila.pop();
-		
-		vector<pair<int, int>> direcciones = {
-			{25, 0}, {-25, 0}, {0, 25}, {0, -25},
-			{25, 25}, {-25, -25}, {25, -25}, {-25, 25}
-		};
-		
-		for (auto dir : direcciones) {
-			pair<int, int> vecino = { actual.first + dir.first, actual.second + dir.second };
-			
-			if (existePunto(vecino.first, vecino.second) && visitados.find(vecino) == visitados.end()) {
-				pila.push(vecino);
-				visitados.insert(vecino);
-				predecesor[vecino] = actual;
-				
-				if (vecino == Fin) {
-					encontrado = true;
-					break;
-				}
-			}
-		}
-	}
-	
-	if (encontrado) {
-		Camino.clear();
-		pair<int, int> paso = Fin;
-		while (paso != Inicio) {
-			Camino.push_back(paso);
-			paso = predecesor[paso];
-		}
-		reverse(Camino.begin(), Camino.end());
-	}
-	else {
-		cout << "No se encontró un camino." << endl;
-	}
-}
-
 
