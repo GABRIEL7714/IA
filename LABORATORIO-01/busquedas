@@ -27,6 +27,19 @@ void A_star();
 void generarPuntosRojos();
 bool existePunto(int x, int y);
 pair<int, int> seleccionarPunto();
+vector<pair<int, int>> explorados;
+
+void amplitudAux() {
+	
+	glColor3f(0, 0, 1);
+	glPointSize(5.0);
+	glBegin(GL_POINTS);
+	for (auto& p : explorados) {
+		glVertex2i(p.first, p.second);
+	}
+	glEnd();
+}
+
 void reshape_cb(int w, int h)
 {
 	if (w == 0 || h == 0) return;
@@ -112,6 +125,10 @@ void display_cb()
 	}
 	glEnd();
 	
+	//Solo amplitud:
+	amplitudAux();
+	
+	
 	glutSwapBuffers();
 }
 
@@ -124,8 +141,8 @@ void initialize() {
 	glutReshapeFunc(reshape_cb);
 	glClearColor(1.f, 1.f, 1.f, 1.f);
 	generarPuntosRojos();
-	//Inicio = seleccionarPunto();
-	//Fin = seleccionarPunto();
+	Inicio = seleccionarPunto();
+	Fin = seleccionarPunto();
 	hillClimbing();
 	
 	/*for (auto& p1 : puntosRojos)
@@ -222,15 +239,15 @@ void hillClimbing()
 }
 
 
-
-
 void amplitud() {
 	queue<pair<int, int>> cola;
 	map<pair<int, int>, pair<int, int>> predecesor;
 	set<pair<int, int>> visitados;
+	explorados.clear(); // Limpiar nodos explorados antes de iniciar la búsqueda
 	
 	cola.push(Inicio);
 	visitados.insert(Inicio);
+	explorados.push_back(Inicio); // Agregar el inicio a explorados
 	bool encontrado = false;
 	
 	while (!cola.empty() && !encontrado) {
@@ -249,6 +266,7 @@ void amplitud() {
 				cola.push(vecino);
 				visitados.insert(vecino);
 				predecesor[vecino] = actual;
+				explorados.push_back(vecino); // Agregar nodo visitado
 				
 				if (vecino == Fin) {
 					encontrado = true;
@@ -266,11 +284,15 @@ void amplitud() {
 			paso = predecesor[paso];
 		}
 		reverse(Camino.begin(), Camino.end());
-	}
-	else {
+	} else {
 		cout << "No se encontró un camino." << endl;
 	}
+	
+	glutPostRedisplay(); // Forzar que se vuelva a llamar a display_cb()
 }
+
+
+
 void A_star() 
 {
 	pair<int, int> actual = Inicio;
@@ -398,4 +420,3 @@ void profundidad() {
 		cout << "No se encontró un camino." << endl;
 	}
 }
-
