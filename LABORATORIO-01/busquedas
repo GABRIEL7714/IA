@@ -15,6 +15,7 @@ using namespace std;
 
 vector<pair<int, int>> puntosRojos;
 vector<pair<int, int>> Camino;
+vector<pair<int,int>> caminosPosibles;
 pair<int, int> Inicio(100,100);
 pair<int, int> Fin(275,175);
 
@@ -87,6 +88,16 @@ void display_cb()
 	glVertex2i(Fin.first, Fin.second);
 	glEnd();
 	
+	
+	glColor3f(1, 1, 0);
+	glPointSize(7.0);
+	glBegin(GL_POINTS);
+	for (auto& p : caminosPosibles)
+	{
+		glVertex2i(p.first, p.second);
+	}
+	glEnd();
+	
 	glColor3f(0, 1, 0);
 	glPointSize(7.0);
 	glBegin(GL_POINTS);
@@ -115,7 +126,7 @@ void initialize() {
 	generarPuntosRojos();
 	//Inicio = seleccionarPunto();
 	//Fin = seleccionarPunto();
-	profundidad();
+	hillClimbing();
 	
 	/*for (auto& p1 : puntosRojos)
 	{
@@ -187,6 +198,7 @@ void hillClimbing()
 		{
 			if (abs(p.first - actual.first) <= 25 && abs(p.second - actual.second) <= 25)
 			{
+				caminosPosibles.push_back(p);
 				double distancia = hypot(Fin.first - p.first, Fin.second - p.second);
 				if (distancia < mejorDistancia)
 				{
@@ -386,5 +398,4 @@ void profundidad() {
 		cout << "No se encontró un camino." << endl;
 	}
 }
-
 
