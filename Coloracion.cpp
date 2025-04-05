@@ -9,6 +9,8 @@ using namespace std;
 
 vector<pair<int,int>> puntos;
 vector<pair<int,int>> unir;
+pair<int,int> act;
+
 
 void mouseCallBack(int,int,int,int);
 
@@ -56,13 +58,13 @@ void mouseCallBack(int button, int state, int x, int y)
 {
 	if(state == GLUT_DOWN)
 	{
-		pair<int,int> coord;
-		coord.first=x;
-		coord.second =abs(y-480);
-		puntos.push_back(coord);
+		act.first=x;
+		act.second =abs(y-480);
+		puntos.push_back(act);
 		cout << x << " , " << y  << "\n";
 	}
 	
-	
 }
+
+if
 
