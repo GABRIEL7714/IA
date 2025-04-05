@@ -1,19 +1,33 @@
-
 #include <iostream>
 #include <vector>
 using namespace std;
 
 class Nodo {
 	vector<vector<char>> tablero;
-	vector<Nodo*> hijos;
+	int puntuacion;
 
 public:
+	vector<Nodo> hijos;
+
+
 	Nodo(vector<vector<char>> tab) {
-	
+		puntuacion = 0;
 		tablero = tab;
 	};
 
-
+	void crearHijos(char C) {
+		vector<vector<char>> tab2 = tablero;
+		for (int i{ 0 }; i < tab2.size(); i++) {
+			for (int j{ 0 }; j < tab2.size(); j++) {
+				if (tab2[i][j] == ' ') {
+					tab2[i][j] = C;
+					Nodo aux(tab2);
+					hijos.push_back(aux);
+					tab2[i][j] = ' ';
+				}
+			}
+		}
+	}
 
 	int contarOpciones();
 
@@ -22,19 +36,31 @@ public:
 
 class Arbol {
 
+
 	int deepth;
-	int n;
 
 public:
 	
 	Nodo* raiz;
-
 
 	Arbol(int d, vector<vector<char>> tab) : deepth(d) {
 	
 		raiz = new Nodo(tab);
 	};
 
+	void minmax(char j, char ia) {
+		
+		raiz->crearHijos(ia);
+		deepth -= 1;
+
+		for (int i{ 0 }; i < raiz->hijos.size(); i++) {
+			raiz->hijos[i].crearHijos(j);
+		}
+		raiz->hijos[0].hijos[i]
+
+	}
+
+	
 
 };
 
