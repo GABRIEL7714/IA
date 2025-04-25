@@ -11,24 +11,20 @@
 
 using namespace std;
 
-// --- Datos del grafo dibujado por el usuario ---
 vector<pair<int, int>> puntos;
 vector<pair<int, int>> edges;
 vector<double> avgDistances;
 
-
-// --- Parámetros del GA ---
 const int POP_SIZE    = 20;
 const int GENERATIONS = 30;
-const double MUT_RATE = 0.1;  // tasa de mutación por inserción
+const double MUT_RATE = 0.1; 
 vector<vector<int>> population;
-vector<vector<int>> bestTours;  // mejor tour de cada generación
-vector<double> bestDistances;   // distancia del mejor tour por generación
+vector<vector<int>> bestTours;  
+vector<double> bestDistances;
 vector<vector<double>> distMat;
 bool gaDone = false;
 int currentGen = 0;
 
-// --- Funciones GA ---
 double tourDistance(const vector<int>& tour) {
 	double d = 0.0;
 	for (int i = 0; i < (int)tour.size(); ++i) {
@@ -39,7 +35,6 @@ double tourDistance(const vector<int>& tour) {
 	return d;
 }
 
-// PMX Crossover
 vector<int> pmx(const vector<int>& p1, const vector<int>& p2) {
 	int n = p1.size();
 	vector<int> c(n, -1);
@@ -49,10 +44,8 @@ vector<int> pmx(const vector<int>& p1, const vector<int>& p2) {
 	int i = dis(gen), j = dis(gen);
 	if (i > j) swap(i,j);
 	
-	// Copiar segmento
 	for (int k = i; k <= j; ++k) c[k] = p1[k];
 	
-	// Mapeo
 	for (int k = i; k <= j; ++k) {
 		int val = p2[k];
 		if (find(c.begin()+i, c.begin()+j+1, val) == c.begin()+j+1) {
@@ -65,13 +58,11 @@ vector<int> pmx(const vector<int>& p1, const vector<int>& p2) {
 			}
 		}
 	}
-	// Rellenar resto
 	for (int k = 0; k < n; ++k)
 		if (c[k] < 0) c[k] = p2[k];
 	return c;
 }
 
-// Mutación por inserción (orden)
 void mutate(vector<int>& tour) {
 	static random_device rd;
 	static mt19937 gen(rd());
@@ -86,7 +77,6 @@ void mutate(vector<int>& tour) {
 	tour.insert(tour.begin() + (j % tour.size()), gene);
 }
 
-// Selección por ruleta
 int rouletteSelect(const vector<double>& fitness) {
 	static random_device rd;
 	static mt19937 gen(rd());
@@ -100,7 +90,6 @@ int rouletteSelect(const vector<double>& fitness) {
 	return fitness.size()-1;
 }
 
-// Inicializa matriz de distancias
 void computeDistMatrix() {
 	int n = puntos.size();
 	distMat.assign(n, vector<double>(n,0.0));
@@ -132,7 +121,6 @@ void runGA() {
 	
 	computeDistMatrix();
 	
-	// 1) Inicializar población
 	population.clear();
 	vector<int> base(n);
 	iota(base.begin(), base.end(), 0);
@@ -144,10 +132,9 @@ void runGA() {
 	
 	bestTours.clear();
 	bestDistances.clear();
-	avgDistances.clear();  // <-- agregado
+	avgDistances.clear(); 
 	
 	
-	// 2) Iterar generaciones
 	for (int g = 0; g < GENERATIONS; ++g) {
 		vector<double> distances(POP_SIZE), fitness(POP_SIZE);
 		for (int i = 0; i < POP_SIZE; ++i) {
@@ -168,11 +155,10 @@ void runGA() {
 		bestTours.push_back(population[bestIdx]);
 		bestDistances.push_back(distances[bestIdx]);
 		
-		// Imprimir distancia en terminal
 		cout << "Generación " << (g+1) << ": " << distances[bestIdx] << endl;
 		
 		vector<vector<int>> newPop;
-		newPop.push_back(population[bestIdx]); // elitismo
+		newPop.push_back(population[bestIdx]); 
 		while ((int)newPop.size() < POP_SIZE) {
 			int i1 = rouletteSelect(fitness);
 			int i2 = rouletteSelect(fitness);
@@ -187,14 +173,11 @@ void runGA() {
 	currentGen = 0;
 	stringstream ss; ss << "Mejor tour - Gen " << (currentGen+1) << "/" << GENERATIONS;
 	glutSetWindowTitle(ss.str().c_str());
-	
-	// ...
-	
-	exportResults();  // <-- Agregado aquí
+
+	exportResults(); 
 	
 }
 
-// --- Dibujo y eventos GLUT ---
 int win_height = 480;
 
 void reshape_cb(int w, int h) {
