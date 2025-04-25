@@ -8,6 +8,7 @@
 #include <cmath>
 #include <sstream>
 #include <fstream>
+#include <numeric>
 
 using namespace std;
 
