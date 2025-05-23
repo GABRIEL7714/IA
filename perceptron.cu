@@ -38,7 +38,7 @@ void entrenar(const vector<vector<int>>& entradas, const vector<int>& etiquetas)
     int numMuestras = entradas.size();
     const int entradaSize = NUM_ENTRADAS + 1;
     const size_t inputSize = entradaSize * sizeof(int);
-    const size_t weightSize = NUM_NEURONAS * entradaSize * sizeof(double);
+    const size_t pesosSize = NUM_NEURONAS * entradaSize * sizeof(double);
     const size_t salidasSize = NUM_NEURONAS * sizeof(int);
 
     double* h_pesos = new double[NUM_NEURONAS * entradaSize]();
@@ -47,19 +47,19 @@ void entrenar(const vector<vector<int>>& entradas, const vector<int>& etiquetas)
     int* d_etiquetas;
     int* d_salidas;
 
-    cudaMalloc(&d_pesos, weightSize);
+    cudaMalloc(&d_pesos, pesosSize);
     cudaMalloc(&d_x, inputSize);
     cudaMalloc(&d_etiquetas, numMuestras * sizeof(int));
     cudaMalloc(&d_salidas, salidasSize);
 
-    cudaMemcpy(d_pesos, h_pesos, weightSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_pesos, h_pesos, pesosSize, cudaMemcpyHostToDevice);
     cudaMemcpy(d_etiquetas, etiquetas.data(), numMuestras * sizeof(int), cudaMemcpyHostToDevice);
 
     int era = 1;
     bool error;
 
     do {
-        cout << "Era " << era++ << ":\n";
+        cout << "Era " << era++ << "\n";
         error = false;
         for (int m = 0; m < numMuestras; m++) {
             vector<int> x = entradas[m];
@@ -83,7 +83,7 @@ void entrenar(const vector<vector<int>>& entradas, const vector<int>& etiquetas)
         }
     } while (error );
 
-    cudaMemcpy(h_pesos, d_pesos, weightSize, cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_pesos, d_pesos, pesosSize, cudaMemcpyDeviceToHost);
 
     cout << "\nEntrenamiento completado.\n\n";
     for (int j = 0; j < NUM_NEURONAS; j++) {
@@ -147,6 +147,7 @@ int main() {
         {1,1,1,1,1,0,0,1,1,0,0,1,1,1,1,1,1,0,0,1,1,0,0,1,1,0,0,1,1,1,1,1},
         {1,1,1,1,1,0,0,1,1,0,0,1,1,1,1,1,0,0,0,1,0,0,0,1,0,0,0,1,1,1,1,1}
     };
+
     vector<int> etiquetas = { 0,1,2,3,4,5,6,7,8,9 };
 
     entrenar(entradas, etiquetas);
