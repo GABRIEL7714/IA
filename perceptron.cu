@@ -74,16 +74,7 @@ void entrenar(const vector<vector<int>>& entradas, const vector<int>& etiquetas)
 
             for (int j = 0; j < NUM_NEURONAS; j++) {
                 int deseado = (etiquetas[m] == j) ? 1 : 0;
-                //cout << "yout = ";
-                for (int i = 0; i < entradaSize; i++) {
-                    //cout << x[i] << " x " << h_pesos[j * entradaSize + i] << " + ";
-                }
-                double sum = 0;
-                for (int i = 0; i < entradaSize; i++) {
-                    sum += x[i] * h_pesos[j * entradaSize + i];
-                }
-                //cout << " = " << sum << endl;
-
+  
                 if (h_salidas[j] != deseado) error = true;
             }
 
@@ -98,7 +89,7 @@ void entrenar(const vector<vector<int>>& entradas, const vector<int>& etiquetas)
     for (int j = 0; j < NUM_NEURONAS; j++) {
         cout << "Pesos de la neurona " << j << ": ";
         for (int i = 0; i < entradaSize; i++)
-            cout << h_pesos[j * entradaSize + i] << " | ";
+            cout << "W" <<i << " = " << h_pesos[j * entradaSize + i] << " \n ";
         cout << "\n";
     }
 
