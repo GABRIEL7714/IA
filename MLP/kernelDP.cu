@@ -22,6 +22,104 @@ struct Dataset {
     vector<vector<float>> outputs;
 };
 
+__global__ void forward_kernel(
+    const float* input, const float* weights, const float* bias,
+    float* output, int in_size, int out_size, int batch_size, bool use_relu
+) {
+    int sample_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int neuron_idx = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (sample_idx >= batch_size || neuron_idx >= out_size) return;
+
+    float sum = 0.0f;
+    for (int k = 0; k < in_size; ++k) {
+        sum += input[sample_idx * in_size + k] * weights[neuron_idx * in_size + k];
+    }
+    sum += bias[neuron_idx];
+
+    if (use_relu) {
+        sum = fmaxf(0.0f, sum);
+    }
+
+    output[sample_idx * out_size + neuron_idx] = sum;
+}
+
+__global__ void output_error_kernel(
+    const float* output,
+    const float* target,
+    float* error,
+    int total_elements
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Strict bounds checking
+    if (idx >= total_elements) return;
+
+    // Safe error calculation
+    error[idx] = output[idx] - target[idx];
+}
+
+__global__ void hidden_error_kernel(
+    const float* activation,
+    const float* current_error,
+    const float* current_weights,
+    float* prev_error,
+    int current_size,
+    int next_size,
+    int batch_size
+) {
+    int sample_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int neuron_idx = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (sample_idx >= batch_size || neuron_idx >= current_size) return;
+
+    float sum = 0.0f;
+    for (int k = 0; k < next_size; ++k) {
+        int weight_idx = neuron_idx * next_size + k;
+        int error_idx = sample_idx * next_size + k;
+
+        if (weight_idx < current_size * next_size && error_idx < batch_size * next_size) {
+            sum += current_weights[weight_idx] * current_error[error_idx];
+        }
+    }
+
+    int output_idx = sample_idx * current_size + neuron_idx;
+    if (output_idx < batch_size * current_size) {
+        float derivative = (activation[output_idx] > 0.0f) ? 1.0f : 0.0f;
+        prev_error[output_idx] = sum * derivative;
+    }
+}
+
+__global__ void update_weights_kernel(
+    float* weights,
+    float* bias,
+    const float* input,
+    const float* error,
+    float lr,
+    int in_size,
+    int out_size,
+    int batch_size
+) {
+    int neuron_out = blockIdx.x * blockDim.x + threadIdx.x;
+    int neuron_in = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (neuron_out < out_size && neuron_in < in_size) {
+        float grad = 0.0f;
+        for (int i = 0; i < batch_size; ++i) {
+            grad += error[i * out_size + neuron_out] * input[i * in_size + neuron_in];
+        }
+        atomicAdd(&weights[neuron_out * in_size + neuron_in], -lr * grad / batch_size);
+    }
+
+    if (neuron_out < out_size && neuron_in == 0) {
+        float grad_b = 0.0f;
+        for (int i = 0; i < batch_size; ++i) {
+            grad_b += error[i * out_size + neuron_out];
+        }
+        atomicAdd(&bias[neuron_out], -lr * grad_b / batch_size);
+    }
+}
+
 Dataset loadCSV(const string& filename, size_t max_samples) {
     Dataset data;
     ifstream file(filename);
@@ -79,10 +177,10 @@ struct MLP {
         batch_size = batch;
 
         // Allocate pointer arrays
-        d_weights = new float*[num_layers - 1]();
-        d_biases = new float*[num_layers - 1]();
-        d_outputs = new float*[num_layers]();
-        d_errors = new float*[num_layers - 1]();
+        d_weights = new float* [num_layers - 1]();
+        d_biases = new float* [num_layers - 1]();
+        d_outputs = new float* [num_layers]();
+        d_errors = new float* [num_layers - 1]();
 
         // Allocate GPU memory with verification
         for (int i = 0; i < num_layers; ++i) {
@@ -98,8 +196,8 @@ struct MLP {
             CHECK_CUDA(cudaMalloc(&d_biases[i], sizeof(float) * out_size));
             CHECK_CUDA(cudaMalloc(&d_errors[i], sizeof(float) * out_size * batch_size));
 
-            cout << "Allocated layer " << i << " weights: " << in_size << "x" << out_size 
-                 << ", errors: " << out_size * batch_size << endl;
+            cout << "Allocated layer " << i << " weights: " << in_size << "x" << out_size
+                << ", errors: " << out_size * batch_size << endl;
 
             // Initialize weights and biases
             float* h_weights = new float[in_size * out_size];
@@ -157,7 +255,7 @@ struct MLP {
 
             cout << "Forward layer " << l << " grid: (" << grid.x << ", " << grid.y << ")" << endl;
 
-            forward_kernel<<<grid, block>>>(
+            forward_kernel << <grid, block >> > (
                 d_outputs[l],
                 d_weights[l],
                 d_biases[l],
@@ -166,7 +264,7 @@ struct MLP {
                 out_size,
                 current_batch_size,
                 !is_output_layer
-            );
+                );
             CHECK_CUDA(cudaGetLastError());
             CHECK_CUDA(cudaDeviceSynchronize());
         }
@@ -192,12 +290,12 @@ struct MLP {
         int threadsPerBlock = 256;
         int blocksPerGrid = (total_output + threadsPerBlock - 1) / threadsPerBlock;
 
-        output_error_kernel<<<blocksPerGrid, threadsPerBlock>>>(
+        output_error_kernel << <blocksPerGrid, threadsPerBlock >> > (
             d_outputs[output_layer_idx],
             d_target,
             d_errors[output_layer_idx - 1],
             total_output
-        );
+            );
         CHECK_CUDA(cudaGetLastError());
         CHECK_CUDA(cudaDeviceSynchronize());
 
@@ -214,7 +312,7 @@ struct MLP {
 
             cout << "Backward layer " << l << " grid: (" << grid.x << ", " << grid.y << ")" << endl;
 
-            hidden_error_kernel<<<grid, block>>>(
+            hidden_error_kernel << <grid, block >> > (
                 d_outputs[l],
                 d_errors[l],
                 d_weights[l],
@@ -222,7 +320,7 @@ struct MLP {
                 current_size,
                 next_size,
                 current_batch_size
-            );
+                );
             CHECK_CUDA(cudaGetLastError());
             CHECK_CUDA(cudaDeviceSynchronize());
         }
@@ -240,7 +338,7 @@ struct MLP {
 
             const float* input = (l == 0) ? d_input : d_outputs[l];
 
-            update_weights_kernel<<<grid, block>>>(
+            update_weights_kernel << <grid, block >> > (
                 d_weights[l],
                 d_biases[l],
                 input,
@@ -249,7 +347,7 @@ struct MLP {
                 in_size,
                 out_size,
                 current_batch_size
-            );
+                );
             CHECK_CUDA(cudaGetLastError());
             CHECK_CUDA(cudaDeviceSynchronize());
         }
@@ -265,12 +363,12 @@ struct MLP {
         int threads = 256;
         int blocks = (total + threads - 1) / threads;
 
-        output_error_kernel<<<blocks, threads>>>(
+        output_error_kernel << <blocks, threads >> > (
             d_outputs[num_layers - 1],
             d_target,
             d_error,
             total
-        );
+            );
         CHECK_CUDA(cudaGetLastError());
         CHECK_CUDA(cudaDeviceSynchronize());
 
@@ -291,103 +389,7 @@ struct MLP {
     }
 };
 
-__global__ void forward_kernel(
-    const float* input, const float* weights, const float* bias,
-    float* output, int in_size, int out_size, int batch_size, bool use_relu
-) {
-    int sample_idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int neuron_idx = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (sample_idx >= batch_size || neuron_idx >= out_size) return;
-
-    float sum = 0.0f;
-    for (int k = 0; k < in_size; ++k) {
-        sum += input[sample_idx * in_size + k] * weights[neuron_idx * in_size + k];
-    }
-    sum += bias[neuron_idx];
-
-    if (use_relu) {
-        sum = fmaxf(0.0f, sum);
-    }
-
-    output[sample_idx * out_size + neuron_idx] = sum;
-}
-
-__global__ void output_error_kernel(
-    const float* output, 
-    const float* target,
-    float* error, 
-    int total_elements
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    
-    // Strict bounds checking
-    if (idx >= total_elements) return;
-    
-    // Safe error calculation
-    error[idx] = output[idx] - target[idx];
-}
-
-__global__ void hidden_error_kernel(
-    const float* activation, 
-    const float* current_error,
-    const float* current_weights,
-    float* prev_error, 
-    int current_size, 
-    int next_size, 
-    int batch_size
-) {
-    int sample_idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int neuron_idx = blockIdx.y * blockDim.y + threadIdx.y;
-
-    if (sample_idx >= batch_size || neuron_idx >= current_size) return;
-
-    float sum = 0.0f;
-    for (int k = 0; k < next_size; ++k) {
-        int weight_idx = neuron_idx * next_size + k;
-        int error_idx = sample_idx * next_size + k;
-        
-        if (weight_idx < current_size * next_size && error_idx < batch_size * next_size) {
-            sum += current_weights[weight_idx] * current_error[error_idx];
-        }
-    }
-
-    int output_idx = sample_idx * current_size + neuron_idx;
-    if (output_idx < batch_size * current_size) {
-        float derivative = (activation[output_idx] > 0.0f) ? 1.0f : 0.0f;
-        prev_error[output_idx] = sum * derivative;
-    }
-}
-
-__global__ void update_weights_kernel(
-    float* weights, 
-    float* bias,
-    const float* input, 
-    const float* error,
-    float lr, 
-    int in_size, 
-    int out_size, 
-    int batch_size
-) {
-    int neuron_out = blockIdx.x * blockDim.x + threadIdx.x;
-    int neuron_in = blockIdx.y * blockDim.y + threadIdx.y;
-
-    if (neuron_out < out_size && neuron_in < in_size) {
-        float grad = 0.0f;
-        for (int i = 0; i < batch_size; ++i) {
-            grad += error[i * out_size + neuron_out] * input[i * in_size + neuron_in];
-        }
-        atomicAdd(&weights[neuron_out * in_size + neuron_in], -lr * grad / batch_size);
-    }
-
-    if (neuron_out < out_size && neuron_in == 0) {
-        float grad_b = 0.0f;
-        for (int i = 0; i < batch_size; ++i) {
-            grad_b += error[i * out_size + neuron_out];
-        }
-        atomicAdd(&bias[neuron_out], -lr * grad_b / batch_size);
-    }
-}
 
 int main() {
     try {
@@ -397,7 +399,7 @@ int main() {
         int batch_size = 1000;
         float learning_rate = 0.01f;
         int epochs = 10;
-        vector<int> architecture = {784, 256, 128, 10};
+        vector<int> architecture = { 784, 256, 128, 10 };
 
         // Cargar datos
         cout << "Loading dataset..." << endl;
@@ -408,13 +410,13 @@ int main() {
         cout << "Preparing GPU data..." << endl;
         float* h_inputs = new float[total_samples * 784];
         float* h_outputs = new float[total_samples * 10];
-        
+
         for (int i = 0; i < total_samples; ++i) {
             copy(dataset.inputs[i].begin(), dataset.inputs[i].end(), h_inputs + i * 784);
             copy(dataset.outputs[i].begin(), dataset.outputs[i].end(), h_outputs + i * 10);
         }
 
-        float* d_inputs, *d_outputs;
+        float* d_inputs, * d_outputs;
         CHECK_CUDA(cudaMalloc(&d_inputs, sizeof(float) * total_samples * 784));
         CHECK_CUDA(cudaMalloc(&d_outputs, sizeof(float) * total_samples * 10));
         CHECK_CUDA(cudaMemcpy(d_inputs, h_inputs, sizeof(float) * total_samples * 784, cudaMemcpyHostToDevice));
@@ -432,20 +434,20 @@ int main() {
         cout << "Training..." << endl;
         for (int epoch = 0; epoch < epochs; ++epoch) {
             float total_error = 0.0f;
-            
+
             for (int i = 0; i < num_batches; ++i) {
                 int offset = i * batch_size * 784;
                 float* d_batch_in = d_inputs + offset;
                 float* d_batch_out = d_outputs + offset;
 
                 cout << "Epoch " << epoch << ", Batch " << i << endl;
-                
+
                 net.forward(d_batch_in, batch_size);
                 net.backward(d_batch_in, d_batch_out, batch_size);
-                
+
                 float batch_error = net.compute_error(d_batch_out, batch_size);
                 total_error += batch_error;
-                
+
                 cout << "Batch error: " << batch_error << endl;
             }
 
@@ -461,7 +463,8 @@ int main() {
         CHECK_CUDA(cudaFree(d_outputs));
 
         cout << "Training complete!" << endl;
-    } catch (const exception& e) {
+    }
+    catch (const exception& e) {
         cerr << "Error: " << e.what() << endl;
         return EXIT_FAILURE;
     }
