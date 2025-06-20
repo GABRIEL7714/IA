@@ -394,13 +394,12 @@ struct MLP {
 int main() {
     try {
         // Configuración
-        string csv_path = "mnist_train.csv";
+        string csv_path = "mnist.csv";
         int total_samples = 60000;
         int batch_size = 1000;
         float learning_rate = 0.01f;
-        int epochs = 10;
-        vector<int> architecture = { 784, 256, 128, 10 };
-
+        int epochs = 100;
+        vector<int> architecture = { 784, 128, 10 };  // 1 capa oculta con 128 neuronas
         // Cargar datos
         cout << "Loading dataset..." << endl;
         Dataset dataset = loadCSV(csv_path, total_samples);
@@ -436,9 +435,11 @@ int main() {
             float total_error = 0.0f;
 
             for (int i = 0; i < num_batches; ++i) {
-                int offset = i * batch_size * 784;
-                float* d_batch_in = d_inputs + offset;
-                float* d_batch_out = d_outputs + offset;
+                int input_offset = i * batch_size * 784;  // Para imágenes (784)
+                int output_offset = i * batch_size * 10;  // Para etiquetas (10)
+
+                float* d_batch_in = d_inputs + input_offset;
+                float* d_batch_out = d_outputs + output_offset;
 
                 cout << "Epoch " << epoch << ", Batch " << i << endl;
 
