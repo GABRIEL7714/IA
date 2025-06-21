@@ -6,6 +6,8 @@
 #include <cmath>
 #include <stdexcept>
 #include <cuda_runtime.h>
+#include <unordered_map>
+
 
 using namespace std;
 
@@ -231,7 +233,7 @@ struct MLP {
     }
 
     void forward(float* d_input, int current_batch_size) {
-        if (current_batch_size <= 0 || current_batch_size > batch_size) {
+        if (current_batch_size <= 0) {
             throw invalid_argument("batch size invalid en el forward()");
         }
 
@@ -384,18 +386,132 @@ struct MLP {
     }
 };
 
+void test_and_confusion_matrix(MLP& net, const string& test_filename, int test_samples) {
+    Dataset test_data = cargarCSV(test_filename, test_samples);
+
+    float* h_test_inputs = new float[test_samples * 784];
+    float* h_test_outputs = new float[test_samples * 10];
+
+    for (int i = 0; i < test_samples; ++i) {
+        copy(test_data.inputs[i].begin(), test_data.inputs[i].end(), h_test_inputs + i * 784);
+        copy(test_data.outputs[i].begin(), test_data.outputs[i].end(), h_test_outputs + i * 10);
+    }
+
+    float* d_test_inputs, * d_test_outputs;
+    CHECK_CUDA(cudaMalloc(&d_test_inputs, sizeof(float) * test_samples * 784));
+    CHECK_CUDA(cudaMalloc(&d_test_outputs, sizeof(float) * test_samples * 10));
+    CHECK_CUDA(cudaMemcpy(d_test_inputs, h_test_inputs, sizeof(float) * test_samples * 784, cudaMemcpyHostToDevice));
+    CHECK_CUDA(cudaMemcpy(d_test_outputs, h_test_outputs, sizeof(float) * test_samples * 10, cudaMemcpyHostToDevice));
+
+    net.forward(d_test_inputs, test_samples);
+
+    float* h_predicted = new float[test_samples * 10];
+    CHECK_CUDA(cudaMemcpy(h_predicted, net.d_outputs[net.num_capas - 1],
+        sizeof(float) * test_samples * 10, cudaMemcpyDeviceToHost));
+
+    int confusion[10][10] = { 0 };
+    int correct = 0;
+
+    for (int i = 0; i < test_samples; ++i) {
+        int true_label = 0;
+        for (int j = 0; j < 10; ++j) {
+            if (test_data.outputs[i][j] == 1.0f) {
+                true_label = j;
+                break;
+            }
+        }
+
+        int predicted_label = 0;
+        float max_val = h_predicted[i * 10];
+        for (int j = 1; j < 10; ++j) {
+            if (h_predicted[i * 10 + j] > max_val) {
+                max_val = h_predicted[i * 10 + j];
+                predicted_label = j;
+            }
+        }
+
+        confusion[true_label][predicted_label]++;
+
+        if (true_label == predicted_label) {
+            correct++;
+        }
+    }
+
+    float accuracy = static_cast<float>(correct) / test_samples * 100.0f;
+
+    cout << "\nMatriz de Confusion:\n";
+    cout << "Real \\ Predic  0     1     2     3     4     5     6     7     8     9\n";
+    for (int i = 0; i < 10; ++i) {
+        cout << i << "        ";
+        for (int j = 0; j < 10; ++j) {
+            cout << confusion[i][j];
+            if (confusion[i][j] < 10) cout << "    ";
+            else if (confusion[i][j] < 100) cout << "   ";
+            else cout << "  ";
+        }
+        cout << "\n";
+    }
+
+    cout << "\nPrecision general: " << accuracy << "%\n";
+
+    cout << "\nMetricas por clase:\n";
+    cout << "Clase\tPrecision\tRecall\tF1-Score\n";
+    for (int i = 0; i < 10; ++i) {
+        int true_positives = confusion[i][i];
+        int false_positives = 0;
+        int false_negatives = 0;
+
+        for (int j = 0; j < 10; ++j) {
+            if (j != i) {
+                false_positives += confusion[j][i];
+                false_negatives += confusion[i][j];
+            }
+        }
+
+        float precision = (true_positives + false_positives) == 0 ? 0 :
+            static_cast<float>(true_positives) / (true_positives + false_positives);
+        float recall = (true_positives + false_negatives) == 0 ? 0 :
+            static_cast<float>(true_positives) / (true_positives + false_negatives);
+        float f1 = (precision + recall) == 0 ? 0 :
+            2 * (precision * recall) / (precision + recall);
+
+        cout << i << "\t" << precision * 100 << "%\t\t"
+            << recall * 100 << "%\t" << f1 * 100 << "%\n";
+    }
+
+    ofstream conf_file("confusion_matrix.csv");
+    for (int i = 0; i < 10; ++i) {
+        for (int j = 0; j < 10; ++j) {
+            conf_file << confusion[i][j];
+            if (j < 9) conf_file << ",";
+        }
+        conf_file << "\n";
+    }
+    conf_file.close();
+
+    delete[] h_test_inputs;
+    delete[] h_test_outputs;
+    delete[] h_predicted;
+    CHECK_CUDA(cudaFree(d_test_inputs));
+    CHECK_CUDA(cudaFree(d_test_outputs));
+}
 
 
 int main() {
     try {
-        string csv_path = "mnist.csv";
+        string train_csv = "mnist.csv";
+        string test_csv = "mnist_test.csv";
         int total_samples = 60000;
-        int batch_size = 60000;
+        int test_samples = 10000;
+        int batch_size = 1000;
         float taza_aprendizaje = 0.01f;
-        int epochs = 100;
-        vector<int> architecture = { 784, 128, 10 };  // 3 capas
-        cout << "Cargando dataset..." << endl;
-        Dataset dataset = cargarCSV(csv_path, total_samples);
+        int epochs = 500;
+        vector<int> architecture = { 784, 128, 10 };
+
+        cout << "Cargando dataset de entrenamiento..." << endl;
+        Dataset dataset = cargarCSV(train_csv, total_samples);
+
+
         int num_batches = total_samples / batch_size;
 
         cout << "Preparando GPU data..." << endl;
@@ -440,6 +556,9 @@ int main() {
                 total_error += batch_error;
 
                 cout << "Batch error: " << batch_error << endl;
+                float prec = 1.0 - batch_error;
+                prec = prec * 100;
+                cout << "Precision: " << prec << "%\n";
             }
 
             float avg_error = total_error / num_batches;
@@ -453,6 +572,10 @@ int main() {
         CHECK_CUDA(cudaFree(d_outputs));
 
         cout << "Entrenamiento completo!" << endl;
+        net.init(architecture, taza_aprendizaje, test_samples);
+
+        cout << "\nProbando con datos de test..." << endl;
+        test_and_confusion_matrix(net, test_csv, test_samples);
 
     }
     catch (const exception& e) {
