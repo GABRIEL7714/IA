@@ -185,7 +185,7 @@ struct MLP {
         // Allocate GPU memory with verification
         for (int i = 0; i < num_layers; ++i) {
             CHECK_CUDA(cudaMalloc(&d_outputs[i], sizeof(float) * layer_sizes[i] * batch_size));
-            cout << "Allocated d_outputs[" << i << "] with size " << layer_sizes[i] * batch_size << endl;
+            //cout << "Allocated d_outputs[" << i << "] with size " << layer_sizes[i] * batch_size << endl;
         }
 
         for (int i = 0; i < num_layers - 1; ++i) {
@@ -196,8 +196,8 @@ struct MLP {
             CHECK_CUDA(cudaMalloc(&d_biases[i], sizeof(float) * out_size));
             CHECK_CUDA(cudaMalloc(&d_errors[i], sizeof(float) * out_size * batch_size));
 
-            cout << "Allocated layer " << i << " weights: " << in_size << "x" << out_size
-                << ", errors: " << out_size * batch_size << endl;
+            //cout << "Allocated layer " << i << " weights: " << in_size << "x" << out_size
+                //<< ", errors: " << out_size * batch_size << endl;
 
             // Initialize weights and biases
             float* h_weights = new float[in_size * out_size];
@@ -253,7 +253,7 @@ struct MLP {
                 (out_size + block.y - 1) / block.y
             );
 
-            cout << "Forward layer " << l << " grid: (" << grid.x << ", " << grid.y << ")" << endl;
+            //cout << "Forward layer " << l << " grid: (" << grid.x << ", " << grid.y << ")" << endl;
 
             forward_kernel << <grid, block >> > (
                 d_outputs[l],
@@ -285,7 +285,7 @@ struct MLP {
             throw runtime_error("Invalid layer index in backward()");
         }
 
-        cout << "Calculating output error with " << total_output << " elements" << endl;
+        //cout << "Calculating output error with " << total_output << " elements" << endl;
 
         int threadsPerBlock = 256;
         int blocksPerGrid = (total_output + threadsPerBlock - 1) / threadsPerBlock;
@@ -396,7 +396,7 @@ int main() {
         // Configuración
         string csv_path = "mnist.csv";
         int total_samples = 60000;
-        int batch_size = 1000;
+        int batch_size = 60000;
         float learning_rate = 0.01f;
         int epochs = 100;
         vector<int> architecture = { 784, 128, 10 };  // 1 capa oculta con 128 neuronas
@@ -464,6 +464,59 @@ int main() {
         CHECK_CUDA(cudaFree(d_outputs));
 
         cout << "Training complete!" << endl;
+
+        // --- Evaluación Final (después del entrenamiento) ---
+        if (total_samples >= 10000) {
+            cout << "\nEvaluando primeros 10,000 ejemplos..." << endl;
+
+            // 1. Matriz de confusión (10x10) inicializada en ceros
+            vector<vector<int>> confusion_matrix(10, vector<int>(10, 0));
+
+            // 2. Procesar los primeros 10,000 datos
+            int test_size = 10000;
+            float* d_test_input;
+            CHECK_CUDA(cudaMalloc(&d_test_input, sizeof(float) * test_size * 784));
+            CHECK_CUDA(cudaMemcpy(d_test_input, d_inputs, sizeof(float) * test_size * 784, cudaMemcpyDeviceToDevice));
+
+            // 3. Forward pass para obtener predicciones
+            net.forward(d_test_input, test_size);
+
+            // 4. Copiar salidas a CPU
+            float* h_predictions = new float[test_size * 10];
+            CHECK_CUDA(cudaMemcpy(h_predictions, net.d_outputs[net.num_layers - 1], sizeof(float) * test_size * 10, cudaMemcpyDeviceToHost));
+
+            // 5. Generar matriz de confusión
+            for (int i = 0; i < test_size; ++i) {
+                // Obtener etiqueta real (del CSV)
+                int true_label = distance(dataset.outputs[i].begin(), max_element(dataset.outputs[i].begin(), dataset.outputs[i].end()));
+
+                // Obtener predicción (neurona con mayor activación)
+                float* pred_start = h_predictions + i * 10;
+                int pred_label = distance(pred_start, max_element(pred_start, pred_start + 10));
+
+                confusion_matrix[true_label][pred_label]++;
+            }
+
+            // 6. Guardar matriz en archivo
+            ofstream matrix_file("confusion_matrix.csv");
+            matrix_file << "Real\\Pred,0,1,2,3,4,5,6,7,8,9\n";
+            for (int i = 0; i < 10; ++i) {
+                matrix_file << i;
+                for (int j = 0; j < 10; ++j) {
+                    matrix_file << "," << confusion_matrix[i][j];
+                }
+                matrix_file << "\n";
+            }
+            matrix_file.close();
+
+            // 7. Liberar memoria
+            delete[] h_predictions;
+            CHECK_CUDA(cudaFree(d_test_input));
+
+            cout << "Matriz de confusión guardada en 'confusion_matrix.csv'" << endl;
+        }
+
+
     }
     catch (const exception& e) {
         cerr << "Error: " << e.what() << endl;
